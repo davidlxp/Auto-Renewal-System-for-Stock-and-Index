@@ -1,0 +1,116 @@
+
+############ Importing all of the important libraries ############
+
+import pandas as pd
+import numpy as np
+import os.path
+import pandas_datareader.data as web
+import matplotlib.pyplot as plt
+%matplotlib inline
+from matplotlib import style
+style.use('ggplot')
+import datetime as dt
+import os # To creat new directories
+import bs4 as bs
+import pickle
+import requests
+import datetime # Importing current date and time
+from datetime import datetime  
+from datetime import timedelta 
+import re 
+import gc # garbage collector to clean memory for python
+
+############ Creating 2 useful functions ############
+
+# The first important function to assit reformating datetime
+def date_to_datetime(input_date): # changing full time "Y,m,d,h,m,s,mm" to "Y,m,d,0,0" 
+    year = input_date.year
+    month = input_date.month
+    day = input_date.day
+    return dt.datetime(year, month, day)
+    
+# The second important function to assit reformating datetime
+def series_to_datetime(input_series):
+    year = input_series.dt.year # Getting specific year
+    month = input_series.dt.month # Getting specific month
+    
+    day = input_series.dt.day # Getting specific day
+    return(dt.datetime(year, month, day))
+
+############ Automated stock and index data downloading and renewal system ############
+
+def download_or_renew():
+        
+    ### Pop-up window to input ticker ###
+    
+    tickers = input('\n type in tickers you want to download or renew (in format ticker1,ticker2,ticker3,etc...):')
+    tickers = tickers.split(',')
+
+    
+    ### This section is the actual code of downloading or renew ###
+    
+    for ticker in tickers:
+        
+        ticker_file_name = ('{}_data'.format(ticker))
+        
+        if not os.path.exists('stock_and_index'):
+            os.makedirs('stock_and_index') # Will create a folder whose name is stock_dfs in the directiory.
+        
+        ### Path 1: If there is no S&P 500 file in the directory, download the data from the earliest we can get to the latest date ###
+        
+        if not os.path.exists('stock_and_index/{}.csv'.format(ticker_file_name)):
+            start = dt.datetime(2000,1,1)
+        
+            now = datetime.now()
+            n_end_date = datetime.now() # getting the current time value and save to 'n_end_date' which means new end date
+            new_end = date_to_datetime(n_end_date) ###### Reformat the current date
+        
+            df = web.DataReader(ticker,'yahoo',start,new_end)
+            df.to_csv('stock_and_index/{}.csv'.format(ticker_file_name))
+        
+            print("{} Successfully Downloaded".format(ticker))
+        
+        
+        ### Path 2: If there is specific stock or index excel file in the directory, then just renew it to the latest date ###
+        
+        else:
+            ticker_df = pd.read_csv('stock_and_index/{}.csv'.format(ticker_file_name),parse_dates = True) # Reading the existing S&P 500 file
+    
+            last_date = pd.to_datetime(ticker_df.iloc[[-1]]['Date']) # Getting the last date that is on file
+            old_end = series_to_datetime(last_date) # Reformat the last date on file which better for comparision
+    
+            now = datetime.now()
+            n_end_date = datetime.now() # getting the current time value and save to 'n_end_date' which means new end date
+            new_end = date_to_datetime(n_end_date) # Reformat the current date
+    
+            n_start_date = last_date + timedelta(days=1) # Adding one day to the existing date, name means new start date
+            new_start = series_to_datetime(n_start_date) # Generating new start date based on the add on 1 day.
+    
+            ### Loop ###
+            if old_end < new_end: 
+                addon_df = web.DataReader(ticker,'yahoo',new_start,new_end) # This is the new data we want to add to existing Excel file
+            
+                with open('stock_and_index/{}.csv'.format(ticker_file_name),'a') as f:
+                    addon_df.to_csv(f, header=False)
+        
+                print("{} Successfully Renewed".format(ticker))
+            
+            else:
+                print("Already have the latest data for {}, no need for renew".format(ticker))
+            
+            del ticker_df ### Clean memory, not sure if it works or not.
+        
+download_or_renew() # run the function
+
+print("\nYou Can Get The Downloaded/ Renewed All Input Tickers At:\n\n",os.getcwd(),"(In the 'stock_and_index' folder)")
+
+############ Note That ############
+
+# If the code couldn't run, and returned [Keyerror:'Date'] at the end of the error
+# it means you already have all data that could get in the database
+
+# Cause of Error: We can't get index data from yahoo finance between dates which has no market data. This means 
+#                 both start, end dates and days between them which we try to get data from are all market-off dates. 
+#                 In short, it means from the last date in the database to the current date, the US stock market is off,
+#                 and there is no new data need to get.
+
