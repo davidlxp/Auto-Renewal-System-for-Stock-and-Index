@@ -41,13 +41,13 @@ def series_to_datetime(input_series):
 
 def download_or_renew():
         
-    ### Pop-up window to input ticker ###
+    ######### Pop-up window to input ticker #########
     
-    tickers = input('\n type in tickers you want to download or renew (in format ticker1,ticker2,ticker3,etc...):')
+    tickers = input('\nType in tickers you want to download or renew (in format ticker1,ticker2,ticker3,etc...):')
     tickers = tickers.split(',')
 
     
-    ### This section is the actual code of downloading or renew ###
+    ######### This section is the actual code of downloading or renew #########
     
     for ticker in tickers:
         
@@ -55,11 +55,13 @@ def download_or_renew():
         
         if not os.path.exists('stock_and_index'):
             os.makedirs('stock_and_index') # Will create a folder whose name is stock_dfs in the directiory.
+            
+        if not os.path.exists('stock_and_index/stock_db'):
+            os.makedirs('stock_and_index/stock_db')
         
-        ### Path 1: If there is no specific stock or index excel file in the directory, download the data from the earliest we can get to the latest date ###
-        
+        ### Path 1: If there is no S&P 500 file in the directory, download the data from the earliest we can get to the latest date
         if not os.path.exists('stock_and_index/{}.csv'.format(ticker_file_name)):
-            start = dt.datetime(2000,1,1)
+            start = dt.datetime(1990,1,1)
         
             now = datetime.now()
             n_end_date = datetime.now() # getting the current time value and save to 'n_end_date' which means new end date
@@ -71,22 +73,21 @@ def download_or_renew():
             print("{} Successfully Downloaded".format(ticker))
         
         
-        ### Path 2: If there is specific stock or index excel file in the directory, then just renew it to the latest date ###
-        
+        ### Path 2: If there is specific stock or index excel file in the directory, then just renew it to the latest date
         else:
             ticker_df = pd.read_csv('stock_and_index/{}.csv'.format(ticker_file_name),parse_dates = True) # Reading the existing S&P 500 file
     
             last_date = pd.to_datetime(ticker_df.iloc[[-1]]['Date']) # Getting the last date that is on file
-            old_end = series_to_datetime(last_date) # Reformat the last date on file which better for comparision
+            old_end = series_to_datetime(last_date) ###### Reformat the last date on file which better for comparision
     
             now = datetime.now()
             n_end_date = datetime.now() # getting the current time value and save to 'n_end_date' which means new end date
-            new_end = date_to_datetime(n_end_date) # Reformat the current date
+            new_end = date_to_datetime(n_end_date) ###### Reformat the current date
     
             n_start_date = last_date + timedelta(days=1) # Adding one day to the existing date, name means new start date
-            new_start = series_to_datetime(n_start_date) # Generating new start date based on the add on 1 day.
+            new_start = series_to_datetime(n_start_date) ###### Generating new start date based on the add on 1 day.
     
-            ### Loop ###
+            ###### 1st stage loop (path A)
             if old_end < new_end: 
                 addon_df = web.DataReader(ticker,'yahoo',new_start,new_end) # This is the new data we want to add to existing Excel file
             
@@ -98,19 +99,47 @@ def download_or_renew():
             else:
                 print("Already have the latest data for {}, no need for renew".format(ticker))
             
-            del ticker_df ### Clean memory, not sure if it works or not.
+            del ticker_df ### Clean memory
+    
+    ################## Transferring the the data we just renewed into SQLITE database ##################
+    
+    path = os.getcwd()
+    location = path + "\\stock_and_index\\stock_db\\stock.db" # location to creat database or getting the database
+    con = sqlite3.connect(location)
+    cur = con.cursor()
+    
+    for ticker in tickers:
         
+        path_ticker = path + '\\stock_and_index\\{}_data.csv'.format(ticker) # Getting the address of the CSV file we want to transfer into SQL
+
+        # Delete the existing table from database for specific company
+        # We will import a new table into the database
+        cur.execute("DROP TABLE IF EXISTS {};".format(ticker)) 
+        cur.execute("CREATE TABLE {} (Date, High, Low, Open, Close, Volume, Adj_Close);".format(ticker)) # Creating a table 
+
+        with open(path_ticker,'r') as f:
+            dr = csv.DictReader(f) 
+            to_db = [(i['Date'], i['High'],i['Low'],i['Open'],i['Close'],i['Volume'],i['Adj Close']) for i in dr]
+
+        cur.executemany("INSERT INTO {} (Date, High, Low, Open, Close, Volume, Adj_Close) VALUES (?, ?, ?, ?, ?, ?, ?);".format(ticker), to_db)
+
+    con.commit()
+    con.close()
+
+    
+    print("\n> You Can Get The Downloaded/ Renewed All Input Tickers At:\n\n ",os.getcwd(),"(In the 'stock_and_index' folder)")    
+    print("\n> The SQLITE Database of the stocks are located in 'stock_and_index\stock_db\' path")        
+
+    
 download_or_renew() # run the function
 
-print("\nYou Can Get The Downloaded/ Renewed All Input Tickers At:\n\n",os.getcwd(),"(In the 'stock_and_index' folder)")
 
 ############ Note That ############
 
-# If the code couldn't run, and returned [Keyerror:'Date'] at the end of the error
+# Don't worry if the code couldn't run, and returned [Keyerror:'Date'] at the end of the error
 # it means you already have all data that could get in the database
 
 # Cause of Error: We can't get index data from yahoo finance between dates which has no market data. This means 
 #                 both start, end dates and days between them which we try to get data from are all market-off dates. 
 #                 In short, it means from the last date in the database to the current date, the US stock market is off,
 #                 and there is no new data need to get.
-
